@@ -3,7 +3,7 @@
 # Compile script for Xiaomi 8450 kernel, dts and modules with AOSPA
 # Copyright (C) 2024-2025 Adithya R.
 
-SECONDS=0 # start builtin bash timer
+SECONDS=0
 KP_ROOT="$(realpath ../..)"
 TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r596125"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
@@ -21,6 +21,10 @@ ONLY_MODULES=false
 TARGET=
 DTB_WILDCARD="*"
 DTBO_WILDCARD="*"
+
+# KernelSU Configuration
+KSU_VARIANT="${KSU_VARIANT:-official}"  # official, next, sukisu
+KSU_MODE="${KSU_MODE:-module}"          # module, builtin
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -98,18 +102,13 @@ esac
 ##
 
 echo_i() { echo -e "\n\033[1;36m==> $1\033[0m\n"; }
-
 echo_w() { echo -e "\033[1;33m $1\033[0m"; }
-
 echo_e() { echo -e "\n\033[1;31m $1\033[0m\n"; }
 
 get_trees_rev() {
     kernel_rev="$(git rev-parse HEAD | cut -c1-10)"
-
     modules_rev="$(git -C ../$MODULES_REPO rev-parse HEAD | cut -c1-8)"
-
     dt_rev="$(git -C ../$DT_REPO rev-parse HEAD | cut -c1-8)"
-
     echo "-${kernel_rev}-m${modules_rev}-d${dt_rev}"
 }
 
@@ -134,8 +133,8 @@ build_modules() {
     rm -rf out/modules out/*.ko
     m INSTALL_MOD_PATH=modules INSTALL_MOD_STRIP=1 modules_install
 
-    ksu_path="$(find $modules_out -name 'kernelsu.ko' -print -quit 2>/dev/null)"
-    if [ "$KSU_BUILTIN" = "1" ]; then
+    ksu_path="$(find out/modules -name 'kernelsu.ko' -print -quit 2>/dev/null)"
+    if [ "$KSU_MODE" = "builtin" ] || [ "$KSU_BUILTIN" = "1" ]; then
         echo_i "KernelSU is built-in, skipping kernelsu.ko"
     elif [ -n "$ksu_path" ]; then
         mv "$ksu_path" out
@@ -253,36 +252,37 @@ scripts/config --file out/.config \
     --set-str LOCALVERSION "-${KERNEL_NAME}$(get_trees_rev)" \
     -d LOCALVERSION_AUTO
 
-if [ "$KSU_BUILTIN" = "1" ]; then
-    # KernelSU built into the kernel image + SUSFS (needs the SUSFS patches applied first)
-    echo_i "Enabling built-in KernelSU + SUSFS..."
-    scripts/config --file out/.config \
-        -e CONFIG_KSU \
-        -e CONFIG_KSU_SUSFS \
-        -e CONFIG_KSU_SUSFS_SUS_PATH \
-        -e CONFIG_KSU_SUSFS_SUS_MOUNT \
-        -e CONFIG_KSU_SUSFS_SUS_KSTAT \
-        -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
-        -e CONFIG_KSU_SUSFS_ENABLE_LOG \
-        -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-        -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-        -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
-        -e CONFIG_KSU_SUSFS_SUS_MAP \
-        -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
-    # Let Kconfig resolve dependencies, then verify nothing got silently dropped
+if [ "$KSU_MODE" = "builtin" ] || [ "$KSU_BUILTIN" = "1" ]; then
+    echo_i "Enabling built-in KernelSU (${KSU_VARIANT})..."
+    scripts/config --file out/.config -e CONFIG_KSU
+    
+    # Only force explicit SUSFS flags for official variant
+    # Next and SukiSU handle SUSFS config natively in their Kconfig
+    if [ "$KSU_VARIANT" = "official" ]; then
+        scripts/config --file out/.config \
+            -e CONFIG_KSU_SUSFS \
+            -e CONFIG_KSU_SUSFS_SUS_PATH \
+            -e CONFIG_KSU_SUSFS_SUS_MOUNT \
+            -e CONFIG_KSU_SUSFS_SUS_KSTAT \
+            -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            -e CONFIG_KSU_SUSFS_ENABLE_LOG \
+            -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            -e CONFIG_KSU_SUSFS_SUS_MAP \
+            -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+    fi
+    
     m olddefconfig
-    for opt in CONFIG_KSU CONFIG_KSU_SUSFS; do
-        if ! grep -q "^${opt}=y" out/.config; then
-            echo_e "${opt}=y is missing from out/.config. Is KernelSU cloned and are the SUSFS patches applied?"
-            exit 1
-        fi
-    done
+    if ! grep -q "^CONFIG_KSU=y" out/.config; then
+        echo_e "CONFIG_KSU=y is missing from out/.config. Ensure ${KSU_VARIANT} source is cloned and SUSFS patches (if needed) are applied."
+        exit 1
+    fi
 else
     scripts/config --file out/.config -m CONFIG_KSU
 fi
 
 if [ "$NOMOUNT_BUILTIN" = "1" ]; then
-    # NoMount built into the kernel image (needs fs/nomount set up first; it registers a keyring key type)
     echo_i "Enabling built-in NoMount..."
     scripts/config --file out/.config -e CONFIG_KEYS -e CONFIG_NOMOUNT
     m olddefconfig
@@ -293,6 +293,7 @@ if [ "$NOMOUNT_BUILTIN" = "1" ]; then
         fi
     done
 fi
+
 $NO_LTO && {
     scripts/config --file out/.config \
         --set-str LOCALVERSION "-${KERNEL_NAME}-nolto$(get_trees_rev)" \
@@ -310,6 +311,5 @@ else {
     build_modules
     build_dtbs
 }; fi
-
 
 echo_i "Completed in $((SECONDS / 60)) minute(s) and $((SECONDS % 60)) second(s) !"
