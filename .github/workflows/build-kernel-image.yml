@@ -11,6 +11,7 @@ on:
           - official
           - next
           - sukisu
+          - kowsu
       ksu_ref:
         description: 'Commit hash, tag, or branch (Default: 28db74f)'
         required: false
@@ -96,6 +97,9 @@ jobs:
           elif [ "${{ env.KSU_VARIANT }}" = "sukisu" ]; then
             echo "Setting up SukiSU-Ultra (Ref: ${{ env.KSU_REF }})..."
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
+          elif [ "${{ env.KSU_VARIANT }}" = "kowsu" ]; then
+            echo "Setting up KOWSU (Ref: ${{ env.KSU_REF }})..."
+            curl -LSs "https://raw.githubusercontent.com/KOWX712/KernelSU/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
           else
             echo "Setting up Official KernelSU (Ref: ${{ env.KSU_REF }})..."
             curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
@@ -106,12 +110,21 @@ jobs:
           
           # 1. Universal kernel patch (Required for all variants)
           if [ -f "susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch" ]; then
-            echo "Applying kernel SUSFS patch..."
+            echo "Validating kernel SUSFS patch compatibility..."
             cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch "$KDIR/"
             cd "$KDIR"
-            patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Warning: Kernel patch had minor fuzz, continuing..."
+            
+            # Strict dry-run check to prevent silent failures
+            if ! patch -p1 --dry-run < 50_add_susfs_in_gki-android12-5.10.patch > /dev/null 2>&1; then
+                echo "ERROR: Kernel SUSFS patch is incompatible with this kernel source!"
+                echo "Please check if your kernel version matches the patch (e.g., android12-5.10)."
+                exit 1
+            fi
+            
+            echo "Applying kernel SUSFS patch..."
+            patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
           else
-            echo "Error: Kernel SUSFS patch not found!"
+            echo "ERROR: Kernel SUSFS patch not found!"
             exit 1
           fi
 
@@ -123,7 +136,7 @@ jobs:
               cp ../susfs4ksu/kernel_patches/10_enable_susfs_for_ksu.patch .
               patch -p1 < 10_enable_susfs_for_ksu.patch
             else
-              echo "Error: KSU SUSFS patch not found!"
+              echo "ERROR: KSU SUSFS patch not found!"
               exit 1
             fi
           else
