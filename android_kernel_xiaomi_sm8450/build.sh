@@ -23,7 +23,7 @@ DTB_WILDCARD="*"
 DTBO_WILDCARD="*"
 
 # KernelSU Configuration
-KSU_VARIANT="${KSU_VARIANT:-official}"  # official, next, sukisu
+KSU_VARIANT="${KSU_VARIANT:-official}"  # official, next, sukisu, kowsu
 KSU_MODE="${KSU_MODE:-module}"          # module, builtin
 
 while [ $# -gt 0 ]; do
@@ -256,8 +256,7 @@ if [ "$KSU_MODE" = "builtin" ] || [ "$KSU_BUILTIN" = "1" ]; then
     echo_i "Enabling built-in KernelSU (${KSU_VARIANT}) + SUSFS..."
     scripts/config --file out/.config -e CONFIG_KSU
     
-    # Enable SUSFS flags for all variants. 
-    # 'make olddefconfig' will safely ignore flags not supported by specific forks.
+    # Enable SUSFS flags for all variants.
     scripts/config --file out/.config \
         -e CONFIG_KSU_SUSFS \
         -e CONFIG_KSU_SUSFS_SUS_PATH \
@@ -273,9 +272,20 @@ if [ "$KSU_MODE" = "builtin" ] || [ "$KSU_BUILTIN" = "1" ]; then
     
     m olddefconfig
     
+    # Strict verification for KernelSU
     if ! grep -q "^CONFIG_KSU=y" out/.config; then
         echo_e "CONFIG_KSU=y is missing from out/.config. Ensure ${KSU_VARIANT} source is cloned."
         exit 1
+    fi
+
+    # Strict verification for SUSFS
+    if ! grep -q "^CONFIG_KSU_SUSFS=y" out/.config; then
+        echo_e "CRITICAL: CONFIG_KSU_SUSFS=y is missing from out/.config!"
+        echo_e "This means the kernel SUSFS patch failed to apply, or the kernel version is incompatible."
+        echo_e "Stopping build to save CI time."
+        exit 1
+    else
+        echo_i "SUCCESS: CONFIG_KSU_SUSFS is correctly enabled!"
     fi
 else
     scripts/config --file out/.config -m CONFIG_KSU
