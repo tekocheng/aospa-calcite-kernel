@@ -6,7 +6,7 @@ env:
   # Commit KernelSU yang cocok dengan 10_enable_susfs_for_ksu.patch (susfs4ksu v2.3.0).
   # JANGAN pakai "main": main terus bergerak dan patch SUSFS langsung gagal.
   # Kalau susfs4ksu diupdate, cek ulang dan naikkan bersamaan.
-  KSU_REF: v3.3.1
+  KSU_REF: 0c0fdb9
   # NoMount (https://github.com/maxsteeel/nomount), pin ke tag rilis.
   NOMOUNT_REF: v2.2.0
 jobs:
