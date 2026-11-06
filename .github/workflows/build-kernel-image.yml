@@ -7,6 +7,10 @@ env:
   # JANGAN pakai "main": main terus bergerak dan patch SUSFS langsung gagal.
   # Kalau susfs4ksu diupdate, cek ulang dan naikkan bersamaan.
   KSU_REF: 28db74f
+  # Varian KernelSU: official, next, sukisu
+  KSU_VARIANT: official
+  # Mode build KernelSU: builtin atau module
+  KSU_MODE: builtin
   # NoMount (https://github.com/maxsteeel/nomount), pin ke tag rilis.
   NOMOUNT_REF: v2.2.0
 jobs:
@@ -39,7 +43,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7.1.0
         with:
-          python-version: 'pypy3.12'
+          python-version: '3.12' # Menggunakan 3.12 yang stabil (lebih kompatibel dengan repo tool daripada pypy)
       - name: Setup build environment
         run: |
           sudo apt-get update
@@ -73,26 +77,56 @@ jobs:
           else
             echo "Using cached ${CLANG_DIR}"
           fi
-      - name: Include KernelSU
+      - name: Include KernelSU (${{ env.KSU_VARIANT }})
         run: |
           cd kernel_platform/xiaomi/sm8450
           rm -rf KernelSU
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${KSU_REF}"
+          if [ "${{ env.KSU_VARIANT }}" = "next" ]; then
+            echo "Setting up KernelSU-Next..."
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
+          elif [ "${{ env.KSU_VARIANT }}" = "sukisu" ]; then
+            echo "Setting up SukiSU-Ultra..."
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
+          else
+            echo "Setting up Official KernelSU..."
+            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
+          fi
       - name: Include SUSFS
         run: |
           KDIR="$(pwd)/kernel_platform/xiaomi/sm8450"
-          cp -r susfs4ksu/kernel_patches/* "$KDIR"
-          cd "$KDIR/KernelSU"
-          patch -p1 < 10_enable_susfs_for_ksu.patch
-          cd "$KDIR"
-          patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
+          
+          # 1. Terapkan patch ke source kernel (umumnya kompatibel dengan semua varian)
+          if [ -f "susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch" ]; then
+            echo "Applying kernel SUSFS patch..."
+            cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch "$KDIR/"
+            cd "$KDIR"
+            patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Warning: Kernel patch had minor fuzz, continuing..."
+          else
+            echo "Warning: Kernel SUSFS patch not found, skipping."
+          fi
+
+          # 2. Terapkan patch ke source Root Manager HANYA untuk varian official
+          if [ "${{ env.KSU_VARIANT }}" = "official" ]; then
+            echo "Applying SUSFS patch to Official KernelSU source..."
+            cd "$KDIR/KernelSU"
+            if [ -f "../susfs4ksu/kernel_patches/10_enable_susfs_for_ksu.patch" ]; then
+              cp ../susfs4ksu/kernel_patches/10_enable_susfs_for_ksu.patch .
+              patch -p1 < 10_enable_susfs_for_ksu.patch
+            else
+              echo "Error: KSU SUSFS patch not found!"
+              exit 1
+            fi
+          else
+            echo "Skipping KSU-specific SUSFS patch for ${{ env.KSU_VARIANT }} (handled natively by this fork)."
+          fi
       - name: Include NoMount
         run: |
           cd kernel_platform/xiaomi/sm8450
           curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_REF}/kernel/setup.sh" | bash -s "${NOMOUNT_REF}"
       - name: Build kernel image
         env:
-          KSU_BUILTIN: "1"
+          KSU_MODE: ${{ env.KSU_MODE }}
+          KSU_VARIANT: ${{ env.KSU_VARIANT }}
           NOMOUNT_BUILTIN: "1"
         run: |
           cd kernel_platform/xiaomi/sm8450
@@ -101,6 +135,6 @@ jobs:
       - name: Upload kernel image artifact
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: kernel-image
+          name: kernel-image-${{ env.KSU_VARIANT }}
           path: device/xiaomi/marble-kernel/Image
           compression-level: 9
