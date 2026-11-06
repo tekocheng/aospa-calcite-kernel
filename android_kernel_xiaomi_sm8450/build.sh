@@ -115,7 +115,7 @@ get_trees_rev() {
 
 m() {
     make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-        KBUILD_BUILD_USER=alex KBUILD_BUILD_HOST=github-build \
+        KBUILD_BUILD_USER=Nazz KBUILD_BUILD_HOST=github-build \
         DTC_EXT="$PREBUILTS_DIR/bin/dtc" \
         DTC_OVERLAY_TEST_EXT="$PREBUILTS_DIR/bin/ufdt_apply_overlay" \
         TARGET_PRODUCT=$TARGET $@ || exit $?
