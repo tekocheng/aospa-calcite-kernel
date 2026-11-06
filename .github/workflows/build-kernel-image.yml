@@ -2,11 +2,11 @@ name: Kernel Image
 on:
   workflow_dispatch:
 env:
-  CLANG_DIR: clang-r614150
+  CLANG_DIR: clang-r596125
   # Commit KernelSU yang cocok dengan 10_enable_susfs_for_ksu.patch (susfs4ksu v2.3.0).
   # JANGAN pakai "main": main terus bergerak dan patch SUSFS langsung gagal.
   # Kalau susfs4ksu diupdate, cek ulang dan naikkan bersamaan.
-  KSU_REF: 019a3c0
+  KSU_REF: 28db74f
   # NoMount (https://github.com/maxsteeel/nomount), pin ke tag rilis.
   NOMOUNT_REF: v2.2.0
 jobs:
@@ -58,7 +58,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: kernel_platform/clang
-          key: clang-r614150
+          key: clang-r596125
       - name: Setup Clang
         run: |
           mkdir -p kernel_platform/clang
