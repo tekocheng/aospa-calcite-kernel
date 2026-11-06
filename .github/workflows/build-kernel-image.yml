@@ -1,17 +1,26 @@
 name: Kernel Image
 on:
   workflow_dispatch:
+    inputs:
+      ksu_variant:
+        description: 'Root Manager Variant'
+        required: true
+        default: 'official'
+        type: choice
+        options:
+          - official
+          - next
+          - sukisu
+      ksu_ref:
+        description: 'Commit hash, tag, or branch (Default: 28db74f)'
+        required: false
+        default: '28db74f'
+        type: string
 env:
   CLANG_DIR: clang-r596125
-  # Commit KernelSU yang cocok dengan 10_enable_susfs_for_ksu.patch (susfs4ksu v2.3.0).
-  # JANGAN pakai "main": main terus bergerak dan patch SUSFS langsung gagal.
-  # Kalau susfs4ksu diupdate, cek ulang dan naikkan bersamaan.
-  KSU_REF: 28db74f
-  # Varian KernelSU: official, next, sukisu
-  KSU_VARIANT: official
-  # Mode build KernelSU: builtin atau module
+  KSU_VARIANT: ${{ github.event.inputs.ksu_variant || 'official' }}
+  KSU_REF: ${{ github.event.inputs.ksu_ref || '28db74f' }}
   KSU_MODE: builtin
-  # NoMount (https://github.com/maxsteeel/nomount), pin ke tag rilis.
   NOMOUNT_REF: v2.2.0
 jobs:
   build-kernel-image:
@@ -43,7 +52,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12' # Menggunakan 3.12 yang stabil (lebih kompatibel dengan repo tool daripada pypy)
+          python-version: '3.12'
       - name: Setup build environment
         run: |
           sudo apt-get update
@@ -82,30 +91,31 @@ jobs:
           cd kernel_platform/xiaomi/sm8450
           rm -rf KernelSU
           if [ "${{ env.KSU_VARIANT }}" = "next" ]; then
-            echo "Setting up KernelSU-Next..."
+            echo "Setting up KernelSU-Next (Ref: ${{ env.KSU_REF }})..."
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
           elif [ "${{ env.KSU_VARIANT }}" = "sukisu" ]; then
-            echo "Setting up SukiSU-Ultra..."
+            echo "Setting up SukiSU-Ultra (Ref: ${{ env.KSU_REF }})..."
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
           else
-            echo "Setting up Official KernelSU..."
+            echo "Setting up Official KernelSU (Ref: ${{ env.KSU_REF }})..."
             curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
           fi
       - name: Include SUSFS
         run: |
           KDIR="$(pwd)/kernel_platform/xiaomi/sm8450"
           
-          # 1. Terapkan patch ke source kernel (umumnya kompatibel dengan semua varian)
+          # 1. Universal kernel patch (Required for all variants)
           if [ -f "susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch" ]; then
             echo "Applying kernel SUSFS patch..."
             cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch "$KDIR/"
             cd "$KDIR"
             patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch || echo "Warning: Kernel patch had minor fuzz, continuing..."
           else
-            echo "Warning: Kernel SUSFS patch not found, skipping."
+            echo "Error: Kernel SUSFS patch not found!"
+            exit 1
           fi
 
-          # 2. Terapkan patch ke source Root Manager HANYA untuk varian official
+          # 2. Manager-specific patch (Only for Official KSU to prevent patch failures on forks)
           if [ "${{ env.KSU_VARIANT }}" = "official" ]; then
             echo "Applying SUSFS patch to Official KernelSU source..."
             cd "$KDIR/KernelSU"
@@ -117,7 +127,7 @@ jobs:
               exit 1
             fi
           else
-            echo "Skipping KSU-specific SUSFS patch for ${{ env.KSU_VARIANT }} (handled natively by this fork)."
+            echo "Skipping manager-specific SUSFS patch for ${{ env.KSU_VARIANT }} (handled natively)."
           fi
       - name: Include NoMount
         run: |
@@ -135,6 +145,6 @@ jobs:
       - name: Upload kernel image artifact
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: kernel-image-${{ env.KSU_VARIANT }}
+          name: kernel-image-${{ env.KSU_VARIANT }}-susfs
           path: device/xiaomi/marble-kernel/Image
           compression-level: 9
