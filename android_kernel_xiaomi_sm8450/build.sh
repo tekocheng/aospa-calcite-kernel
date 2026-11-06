@@ -253,29 +253,28 @@ scripts/config --file out/.config \
     -d LOCALVERSION_AUTO
 
 if [ "$KSU_MODE" = "builtin" ] || [ "$KSU_BUILTIN" = "1" ]; then
-    echo_i "Enabling built-in KernelSU (${KSU_VARIANT})..."
+    echo_i "Enabling built-in KernelSU (${KSU_VARIANT}) + SUSFS..."
     scripts/config --file out/.config -e CONFIG_KSU
     
-    # Only force explicit SUSFS flags for official variant
-    # Next and SukiSU handle SUSFS config natively in their Kconfig
-    if [ "$KSU_VARIANT" = "official" ]; then
-        scripts/config --file out/.config \
-            -e CONFIG_KSU_SUSFS \
-            -e CONFIG_KSU_SUSFS_SUS_PATH \
-            -e CONFIG_KSU_SUSFS_SUS_MOUNT \
-            -e CONFIG_KSU_SUSFS_SUS_KSTAT \
-            -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
-            -e CONFIG_KSU_SUSFS_ENABLE_LOG \
-            -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
-            -e CONFIG_KSU_SUSFS_SUS_MAP \
-            -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
-    fi
+    # Enable SUSFS flags for all variants. 
+    # 'make olddefconfig' will safely ignore flags not supported by specific forks.
+    scripts/config --file out/.config \
+        -e CONFIG_KSU_SUSFS \
+        -e CONFIG_KSU_SUSFS_SUS_PATH \
+        -e CONFIG_KSU_SUSFS_SUS_MOUNT \
+        -e CONFIG_KSU_SUSFS_SUS_KSTAT \
+        -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
+        -e CONFIG_KSU_SUSFS_ENABLE_LOG \
+        -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+        -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+        -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+        -e CONFIG_KSU_SUSFS_SUS_MAP \
+        -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
     
     m olddefconfig
+    
     if ! grep -q "^CONFIG_KSU=y" out/.config; then
-        echo_e "CONFIG_KSU=y is missing from out/.config. Ensure ${KSU_VARIANT} source is cloned and SUSFS patches (if needed) are applied."
+        echo_e "CONFIG_KSU=y is missing from out/.config. Ensure ${KSU_VARIANT} source is cloned."
         exit 1
     fi
 else
