@@ -115,7 +115,7 @@ get_trees_rev() {
 
 m() {
     make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-        KBUILD_BUILD_USER=Nazz KBUILD_BUILD_HOST=github-build \
+        KBUILD_BUILD_USER=alex KBUILD_BUILD_HOST=github-build \
         DTC_EXT="$PREBUILTS_DIR/bin/dtc" \
         DTC_OVERLAY_TEST_EXT="$PREBUILTS_DIR/bin/ufdt_apply_overlay" \
         TARGET_PRODUCT=$TARGET $@ || exit $?
@@ -263,7 +263,7 @@ if [ "$KSU_BUILTIN" = "1" ]; then
         -e CONFIG_KSU_SUSFS_SUS_MOUNT \
         -e CONFIG_KSU_SUSFS_SUS_KSTAT \
         -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
-        -e CONFIG_KSU_SUSFS_ENABLE_LOG \
+        -d CONFIG_KSU_SUSFS_ENABLE_LOG \
         -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
         -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
         -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
@@ -293,14 +293,6 @@ if [ "$NOMOUNT_BUILTIN" = "1" ]; then
         fi
     done
 fi
-# tmpfs xattr (needed by Mountify)
-scripts/config --file out/.config -e CONFIG_TMPFS_XATTR
-m olddefconfig
-if ! grep -q "^CONFIG_TMPFS_XATTR=y" out/.config; then
-    echo_e "CONFIG_TMPFS_XATTR=y is missing from out/.config."
-    exit 1
-fi
-
 $NO_LTO && {
     scripts/config --file out/.config \
         --set-str LOCALVERSION "-${KERNEL_NAME}-nolto$(get_trees_rev)" \
