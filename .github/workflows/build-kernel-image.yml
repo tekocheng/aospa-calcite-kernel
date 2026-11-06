@@ -42,7 +42,7 @@ jobs:
           sudo chmod a+rx /usr/local/bin/repo
       - name: Clone repo and sync
         run: |
-          repo init -u https://github.com/alex18101985/aospa-calcite-kernel -b main -m manifest.xml --depth=1
+          repo init -u https://github.com/tekocheng/aospa-calcite-kernel -b main -m manifest.xml --depth=1
           repo sync
           cp -rvf android_kernel_xiaomi_sm8450/. kernel_platform/xiaomi/sm8450/
           sed -i 's/\r$//' kernel_platform/xiaomi/sm8450/scripts/setlocalversion
@@ -67,11 +67,22 @@ jobs:
           else
             echo "Using cached ${CLANG_DIR}"
           fi
-      - name: Include KernelSU-Next
+      - name: Include KernelSU
         run: |
           cd kernel_platform/xiaomi/sm8450
           rm -rf KernelSU
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+      - name: Include SUSFS
+        run: |
+          HOME="$(pwd)"
+          cp -r susfs4ksu/kernel_patches/* kernel_platform/xiaomi/sm8450
+          cd kernel_platform/xiaomi/sm8450/KernelSU
+          patch -p1 < 10_enable_susfs_for_ksu.patch
+          cd ..
+          patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
+          cd $HOME/susfs4ksu
+          ./build_ksu_module.sh
+          mv ksu_module_susfs.zip ..
       - name: Build kernel image
         run: |
           cd kernel_platform/xiaomi/sm8450
