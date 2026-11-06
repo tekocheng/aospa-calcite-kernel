@@ -134,8 +134,10 @@ build_modules() {
     rm -rf out/modules out/*.ko
     m INSTALL_MOD_PATH=modules INSTALL_MOD_STRIP=1 modules_install
 
-    ksu_path="$(find $modules_out -name 'kernelsu.ko' -print -quit)"
-    if [ -n "$ksu_path" ]; then
+    ksu_path="$(find $modules_out -name 'kernelsu.ko' -print -quit 2>/dev/null)"
+    if [ "$KSU_BUILTIN" = "1" ]; then
+        echo_i "KernelSU is built-in, skipping kernelsu.ko"
+    elif [ -n "$ksu_path" ]; then
         mv "$ksu_path" out
         echo_i "Copied to out/kernelsu.ko"
     else
@@ -249,8 +251,35 @@ m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
 scripts/config --file out/.config \
     --set-str LOCALVERSION "-${KERNEL_NAME}$(get_trees_rev)" \
-    -d LOCALVERSION_AUTO \
-    -m CONFIG_KSU
+    -d LOCALVERSION_AUTO
+
+if [ "$KSU_BUILTIN" = "1" ]; then
+    # KernelSU built into the kernel image + SUSFS (needs the SUSFS patches applied first)
+    echo_i "Enabling built-in KernelSU + SUSFS..."
+    scripts/config --file out/.config \
+        -e CONFIG_KSU \
+        -e CONFIG_KSU_SUSFS \
+        -e CONFIG_KSU_SUSFS_SUS_PATH \
+        -e CONFIG_KSU_SUSFS_SUS_MOUNT \
+        -e CONFIG_KSU_SUSFS_SUS_KSTAT \
+        -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
+        -d CONFIG_KSU_SUSFS_ENABLE_LOG \
+        -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+        -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+        -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+        -e CONFIG_KSU_SUSFS_SUS_MAP \
+        -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+    # Let Kconfig resolve dependencies, then verify nothing got silently dropped
+    m olddefconfig
+    for opt in CONFIG_KSU CONFIG_KSU_SUSFS; do
+        if ! grep -q "^${opt}=y" out/.config; then
+            echo_e "${opt}=y is missing from out/.config. Is KernelSU cloned and are the SUSFS patches applied?"
+            exit 1
+        fi
+    done
+else
+    scripts/config --file out/.config -m CONFIG_KSU
+fi
 $NO_LTO && {
     scripts/config --file out/.config \
         --set-str LOCALVERSION "-${KERNEL_NAME}-nolto$(get_trees_rev)" \
