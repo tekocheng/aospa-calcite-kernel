@@ -7,6 +7,8 @@ env:
   # JANGAN pakai "main": main terus bergerak dan patch SUSFS langsung gagal.
   # Kalau susfs4ksu diupdate, cek ulang dan naikkan bersamaan.
   KSU_REF: 28db74f
+  # NoMount (https://github.com/maxsteeel/nomount), pin ke tag rilis.
+  NOMOUNT_REF: v2.2.0
 jobs:
   build-kernel-image:
     runs-on: ubuntu-22.04
@@ -84,9 +86,14 @@ jobs:
           patch -p1 < 10_enable_susfs_for_ksu.patch
           cd "$KDIR"
           patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
+      - name: Include NoMount
+        run: |
+          cd kernel_platform/xiaomi/sm8450
+          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_REF}/kernel/setup.sh" | bash -s "${NOMOUNT_REF}"
       - name: Build kernel image
         env:
           KSU_BUILTIN: "1"
+          NOMOUNT_BUILTIN: "1"
         run: |
           cd kernel_platform/xiaomi/sm8450
           export PATH="$(realpath ../../clang/${CLANG_DIR}/bin):$PATH"
