@@ -13,14 +13,14 @@ on:
           - sukisu
           - kowsu
       ksu_ref:
-        description: 'Commit hash, tag, or branch (Default: 28db74f)'
+        description: 'Optional commit/tag/branch. Empty = tested default (official: 28db74f, next: dev-susfs, sukisu: builtin)'
         required: false
-        default: '28db74f'
+        default: ''
         type: string
 env:
   CLANG_DIR: clang-r596125
   KSU_VARIANT: ${{ github.event.inputs.ksu_variant || 'official' }}
-  KSU_REF: ${{ github.event.inputs.ksu_ref || '28db74f' }}
+  KSU_REF: ${{ github.event.inputs.ksu_ref }}
   KSU_MODE: builtin
   NOMOUNT_REF: v2.2.0
 jobs:
@@ -89,58 +89,73 @@ jobs:
           fi
       - name: Include KernelSU (${{ env.KSU_VARIANT }})
         run: |
+          set -o pipefail
           cd kernel_platform/xiaomi/sm8450
-          rm -rf KernelSU
-          if [ "${{ env.KSU_VARIANT }}" = "next" ]; then
-            echo "Setting up KernelSU-Next (Ref: ${{ env.KSU_REF }})..."
-            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
-          elif [ "${{ env.KSU_VARIANT }}" = "sukisu" ]; then
-            echo "Setting up SukiSU-Ultra (Ref: ${{ env.KSU_REF }})..."
-            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
-          elif [ "${{ env.KSU_VARIANT }}" = "kowsu" ]; then
-            echo "Setting up KOWSU (Ref: ${{ env.KSU_REF }})..."
-            curl -LSs "https://raw.githubusercontent.com/KOWX712/KernelSU/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
-          else
-            echo "Setting up Official KernelSU (Ref: ${{ env.KSU_REF }})..."
-            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${{ env.KSU_REF }}"
-          fi
+          rm -rf KernelSU KernelSU-Next
+          # Only forks/branches that ship (or can take) SUSFS are listed here.
+          case "$KSU_VARIANT" in
+            official) BASE="tiann/KernelSU/main";               DEF_REF="28db74f" ;;  # + SUSFS patch 10
+            next)     BASE="pershoot/KernelSU-Next/dev-susfs";  DEF_REF="dev-susfs" ;; # SUSFS built in
+            sukisu)   BASE="SukiSU-Ultra/SukiSU-Ultra/builtin"; DEF_REF="builtin" ;;   # SUSFS built in
+            kowsu)
+              echo "ERROR: kowsu (KOWX712/KernelSU) has no SUSFS support and the SUSFS patch does not apply to it." >&2
+              echo "Choose official, next or sukisu." >&2
+              exit 1 ;;
+            *) echo "ERROR: unknown variant '$KSU_VARIANT'" >&2; exit 1 ;;
+          esac
+          REF="${KSU_REF:-$DEF_REF}"
+          echo "Setting up $KSU_VARIANT (Ref: $REF)..."
+          curl -fLSs "https://raw.githubusercontent.com/${BASE}/kernel/setup.sh" | bash -s "$REF"
       - name: Include SUSFS
         run: |
-          KDIR="$(pwd)/kernel_platform/xiaomi/sm8450"
-          
-          # 1. Universal kernel patch (Required for all variants)
-          if [ -f "susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch" ]; then
-            echo "Validating kernel SUSFS patch compatibility..."
-            cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch "$KDIR/"
-            cd "$KDIR"
-            
-            # Strict dry-run check to prevent silent failures
-            if ! patch -p1 --dry-run < 50_add_susfs_in_gki-android12-5.10.patch > /dev/null 2>&1; then
-                echo "ERROR: Kernel SUSFS patch is incompatible with this kernel source!"
-                echo "Please check if your kernel version matches the patch (e.g., android12-5.10)."
-                exit 1
-            fi
-            
-            echo "Applying kernel SUSFS patch..."
-            patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
-          else
-            echo "ERROR: Kernel SUSFS patch not found!"
+          set -e
+          ROOT="$(pwd)"
+          KDIR="$ROOT/kernel_platform/xiaomi/sm8450"
+          SUSFS="$ROOT/susfs4ksu/kernel_patches"
+
+          # 1. Kernel side (all variants): SUSFS sources + hooks
+          cp "$SUSFS"/fs/* "$KDIR/fs/"
+          cp "$SUSFS"/include/linux/* "$KDIR/include/linux/"
+          cd "$KDIR"
+          cp "$SUSFS/50_add_susfs_in_gki-android12-5.10.patch" .
+          if ! patch -p1 --dry-run < 50_add_susfs_in_gki-android12-5.10.patch > /dev/null 2>&1; then
+            echo "ERROR: Kernel SUSFS patch is incompatible with this kernel source!"
             exit 1
           fi
+          patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
 
-          # 2. Manager-specific patch (Only for Official KSU to prevent patch failures on forks)
-          if [ "${{ env.KSU_VARIANT }}" = "official" ]; then
-            echo "Applying SUSFS patch to Official KernelSU source..."
-            cd "$KDIR/KernelSU"
-            if [ -f "../susfs4ksu/kernel_patches/10_enable_susfs_for_ksu.patch" ]; then
-              cp ../susfs4ksu/kernel_patches/10_enable_susfs_for_ksu.patch .
+          # 2. Manager side
+          case "$KSU_VARIANT" in
+            official)
+              # tiann/KernelSU has no SUSFS: needs the SUSFS patch (made for the pinned commit)
+              cp "$SUSFS/KernelSU/10_enable_susfs_for_ksu.patch" KernelSU/
+              cd KernelSU
               patch -p1 < 10_enable_susfs_for_ksu.patch
-            else
-              echo "ERROR: KSU SUSFS patch not found!"
-              exit 1
-            fi
-          else
-            echo "Skipping manager-specific SUSFS patch for ${{ env.KSU_VARIANT }} (handled natively)."
+              ;;
+            sukisu)
+              # SukiSU builtin calls the priority-uid-filter API but has no Kconfig symbol for it
+              python3 - <<'PY'
+          p = "KernelSU/kernel/Kconfig"
+          s = open(p).read()
+          if "config KSU_SUSFS_PRIORITY_UID_FILTER" not in s:
+              stanza = ("config KSU_SUSFS_PRIORITY_UID_FILTER\n"
+                        "\tbool \"Hide user-defined uids from getpriority/setpriority/ioprio syscalls\"\n"
+                        "\tdepends on KSU_SUSFS\n"
+                        "\tdefault y\n\n")
+              i = s.rindex("endmenu")
+              open(p, "w").write(s[:i] + stanza + s[i:])
+          PY
+              ;;
+            next)
+              : # pershoot dev-susfs already ships SUSFS
+              ;;
+          esac
+
+          # 3. Fail early if SUSFS did not make it into the manager's Kconfig
+          cd "$KDIR"
+          if ! grep -q '^config KSU_SUSFS$' "$(readlink -f drivers/kernelsu)/Kconfig"; then
+            echo "ERROR: $KSU_VARIANT has no CONFIG_KSU_SUSFS in its Kconfig; SUSFS is not integrated." >&2
+            exit 1
           fi
       - name: Include NoMount
         run: |
@@ -161,3 +176,4 @@ jobs:
           name: kernel-image-${{ env.KSU_VARIANT }}-susfs
           path: device/xiaomi/marble-kernel/Image
           compression-level: 9
+          
