@@ -1,10 +1,6 @@
-name: Kernel Image + KernelSU + SUSFS
+name: Kernel Image
 on:
   workflow_dispatch:
-    inputs:
-      ksu_ref:
-        description: 'KernelSU ref (branch/tag) passed to setup.sh. Pin a tag if the SUSFS patch fails on main'
-        default: 'main'
 env:
   CLANG_DIR: clang-r614150
 jobs:
@@ -75,44 +71,26 @@ jobs:
         run: |
           cd kernel_platform/xiaomi/sm8450
           rm -rf KernelSU
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${{ inputs.ksu_ref }}"
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
       - name: Include SUSFS
         run: |
-          ROOT="$(pwd)"
-          KDIR="$ROOT/kernel_platform/xiaomi/sm8450"
-          if [ ! -d "$ROOT/susfs4ksu/kernel_patches" ]; then
-            echo "::error::susfs4ksu was not synced. Add it to manifest.xml (and push it to main)."
-            exit 1
-          fi
-          cp -r "$ROOT"/susfs4ksu/kernel_patches/* "$KDIR"
-          cd "$KDIR/KernelSU"
-          if ! patch -p1 < 10_enable_susfs_for_ksu.patch; then
-            echo "::error::SUSFS patch for KernelSU failed. Try pinning ksu_ref to an older tag."
-            find . -name '*.rej' -exec sh -c 'echo "=== $1"; cat "$1"' _ {} \;
-            exit 1
-          fi
-          cd "$KDIR"
-          if ! patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch; then
-            echo "::error::SUSFS kernel patch has rejected hunks. Fix them manually."
-            find . -name '*.rej' -exec sh -c 'echo "=== $1"; cat "$1"' _ {} \;
-            exit 1
-          fi
-          cd "$ROOT/susfs4ksu"
+          HOME="$(pwd)"
+          cp -r susfs4ksu/kernel_patches/* kernel_platform/xiaomi/sm8450
+          cd kernel_platform/xiaomi/sm8450/KernelSU
+          patch -p1 < 10_enable_susfs_for_ksu.patch
+          cd ..
+          patch -p1 < 50_add_susfs_in_gki-android12-5.10.patch
+          cd $HOME/susfs4ksu
           ./build_ksu_module.sh
-          mv ksu_module_susfs.zip "$ROOT"
+          mv ksu_module_susfs.zip ..
       - name: Build kernel image
         run: |
           cd kernel_platform/xiaomi/sm8450
           export PATH="$(realpath ../../clang/${CLANG_DIR}/bin):$PATH"
-          KSU_BUILTIN=1 ./build.sh marble --only-kernel
+          ./build.sh marble --only-kernel
       - name: Upload kernel image artifact
         uses: actions/upload-artifact@v7.0.2
         with:
           name: kernel-image
           path: device/xiaomi/marble-kernel/Image
           compression-level: 9
-      - name: Upload SUSFS module artifact
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: ksu_module_susfs
-          path: ksu_module_susfs.zip
