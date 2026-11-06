@@ -280,6 +280,27 @@ if [ "$KSU_BUILTIN" = "1" ]; then
 else
     scripts/config --file out/.config -m CONFIG_KSU
 fi
+
+if [ "$NOMOUNT_BUILTIN" = "1" ]; then
+    # NoMount built into the kernel image (needs fs/nomount set up first; it registers a keyring key type)
+    echo_i "Enabling built-in NoMount..."
+    scripts/config --file out/.config -e CONFIG_KEYS -e CONFIG_NOMOUNT
+    m olddefconfig
+    for opt in CONFIG_KEYS CONFIG_NOMOUNT; do
+        if ! grep -q "^${opt}=y" out/.config; then
+            echo_e "${opt}=y is missing from out/.config. Is NoMount set up (fs/nomount)?"
+            exit 1
+        fi
+    done
+fi
+# tmpfs xattr (needed by Mountify)
+scripts/config --file out/.config -e CONFIG_TMPFS_XATTR
+m olddefconfig
+if ! grep -q "^CONFIG_TMPFS_XATTR=y" out/.config; then
+    echo_e "CONFIG_TMPFS_XATTR=y is missing from out/.config."
+    exit 1
+fi
+
 $NO_LTO && {
     scripts/config --file out/.config \
         --set-str LOCALVERSION "-${KERNEL_NAME}-nolto$(get_trees_rev)" \
