@@ -5,7 +5,7 @@
 
 SECONDS=0 # start builtin bash timer
 KP_ROOT="$(realpath ../..)"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r614150"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r596125"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 BRANCH="calcite"
 KERNEL_NAME="calcite"
