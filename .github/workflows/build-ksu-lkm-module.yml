@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       ksu_variant:
-        description: 'Pilih varian KernelSU'
+        description: 'Root Manager Variant'
         required: true
         default: 'official'
         type: choice
@@ -11,8 +11,14 @@ on:
           - official
           - next
           - sukisu
+          - kowsu
+      ksu_ref:
+        description: 'Commit hash, tag, or branch'
+        required: false
+        default: 'main'
+        type: string
 env:
-  CLANG_DIR: clang-r596125
+  CLANG_DIR: clang-r614150
 jobs:
   build-ksu-module:
     runs-on: ubuntu-22.04
@@ -43,11 +49,11 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.15'
+          python-version: '3.12'
       - name: Setup build environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc device-tree-compiler
+          sudo apt-get install -y bc device-tree-compiler bison flex libssl-dev build-essential libelf-dev u-boot-tools
           sudo curl --create-dirs -o /usr/local/bin/repo -L https://storage.googleapis.com/git-repo-downloads/repo
           sudo chmod a+rx /usr/local/bin/repo
       - name: Clone repo and sync
@@ -62,7 +68,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: kernel_platform/clang
-          key: clang-r596125
+          key: clang-r614150
       - name: Setup Clang
         run: |
           mkdir -p kernel_platform/clang
@@ -82,11 +88,13 @@ jobs:
           cd kernel_platform/xiaomi/sm8450
           rm -rf KernelSU
           if [ "${{ github.event.inputs.ksu_variant }}" = "next" ]; then
-            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "${{ github.event.inputs.ksu_ref }}"
           elif [ "${{ github.event.inputs.ksu_variant }}" = "sukisu" ]; then
-            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "${{ github.event.inputs.ksu_ref }}"
+          elif [ "${{ github.event.inputs.ksu_variant }}" = "kowsu" ]; then
+            curl -LSs "https://raw.githubusercontent.com/KOWX712/KernelSU/main/kernel/setup.sh" | bash -s "${{ github.event.inputs.ksu_ref }}"
           else
-            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "${{ github.event.inputs.ksu_ref }}"
           fi
       - name: Build LKM module
         env:
