@@ -13,14 +13,26 @@ on:
           - sukisu
           - kowsu
       ksu_ref:
-        description: 'Optional commit/tag/branch. Empty = tested default (official: 28db74f, next: dev-susfs, sukisu: builtin)'
+        description: 'Optional commit/tag/branch. Empty = tested default for the chosen variant'
         required: false
         default: ''
         type: string
+      enable_susfs:
+        description: 'Include SUSFS (not available for kowsu)'
+        required: true
+        default: true
+        type: boolean
+      enable_nomount:
+        description: 'Include NoMount'
+        required: true
+        default: true
+        type: boolean
 env:
   CLANG_DIR: clang-r596125
   KSU_VARIANT: ${{ github.event.inputs.ksu_variant || 'official' }}
   KSU_REF: ${{ github.event.inputs.ksu_ref }}
+  USE_SUSFS: ${{ github.event.inputs.enable_susfs || 'true' }}
+  USE_NOMOUNT: ${{ github.event.inputs.enable_nomount || 'true' }}
   KSU_MODE: builtin
   NOMOUNT_REF: v2.2.0
 jobs:
@@ -92,21 +104,37 @@ jobs:
           set -o pipefail
           cd kernel_platform/xiaomi/sm8450
           rm -rf KernelSU KernelSU-Next
-          # Only forks/branches that ship (or can take) SUSFS are listed here.
-          case "$KSU_VARIANT" in
-            official) BASE="tiann/KernelSU/main";               DEF_REF="28db74f" ;;  # + SUSFS patch 10
-            next)     BASE="pershoot/KernelSU-Next/dev-susfs";  DEF_REF="dev-susfs" ;; # SUSFS built in
-            sukisu)   BASE="SukiSU-Ultra/SukiSU-Ultra/builtin"; DEF_REF="builtin" ;;   # SUSFS built in
-            kowsu)
-              echo "ERROR: kowsu (KOWX712/KernelSU) has no SUSFS support and the SUSFS patch does not apply to it." >&2
-              echo "Choose official, next or sukisu." >&2
-              exit 1 ;;
-            *) echo "ERROR: unknown variant '$KSU_VARIANT'" >&2; exit 1 ;;
-          esac
+          if [ "$USE_SUSFS" = "true" ]; then
+            # Only forks/branches that ship (or can take) SUSFS
+            case "$KSU_VARIANT" in
+              official) BASE="tiann/KernelSU/main";               DEF_REF="28db74f" ;;  # + SUSFS patch 10
+              next)     BASE="pershoot/KernelSU-Next/dev-susfs";  DEF_REF="dev-susfs" ;; # SUSFS built in
+              sukisu)   BASE="SukiSU-Ultra/SukiSU-Ultra/builtin"; DEF_REF="builtin" ;;   # SUSFS built in
+              kowsu)
+                echo "ERROR: kowsu (KOWX712/KernelSU) has no SUSFS support. Turn off enable_susfs or choose official, next or sukisu." >&2
+                exit 1 ;;
+              *) echo "ERROR: unknown variant '$KSU_VARIANT'" >&2; exit 1 ;;
+            esac
+          else
+            # Plain upstream sources
+            case "$KSU_VARIANT" in
+              official) BASE="tiann/KernelSU/main";                DEF_REF="28db74f" ;;
+              next)     BASE="KernelSU-Next/KernelSU-Next/dev";    DEF_REF="dev" ;;
+              sukisu)   BASE="SukiSU-Ultra/SukiSU-Ultra/main";     DEF_REF="main" ;;
+              kowsu)    BASE="KOWX712/KernelSU/main";              DEF_REF="master" ;;
+              *) echo "ERROR: unknown variant '$KSU_VARIANT'" >&2; exit 1 ;;
+            esac
+          fi
           REF="${KSU_REF:-$DEF_REF}"
           echo "Setting up $KSU_VARIANT (Ref: $REF)..."
           curl -fLSs "https://raw.githubusercontent.com/${BASE}/kernel/setup.sh" | bash -s "$REF"
+      - name: Include NoMount
+        if: env.USE_NOMOUNT == 'true'
+        run: |
+          cd kernel_platform/xiaomi/sm8450
+          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_REF}/kernel/setup.sh" | bash -s "${NOMOUNT_REF}"
       - name: Include SUSFS
+        if: env.USE_SUSFS == 'true'
         run: |
           set -e
           ROOT="$(pwd)"
@@ -157,15 +185,12 @@ jobs:
             echo "ERROR: $KSU_VARIANT has no CONFIG_KSU_SUSFS in its Kconfig; SUSFS is not integrated." >&2
             exit 1
           fi
-      - name: Include NoMount
-        run: |
-          cd kernel_platform/xiaomi/sm8450
-          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_REF}/kernel/setup.sh" | bash -s "${NOMOUNT_REF}"
       - name: Build kernel image
         env:
           KSU_MODE: ${{ env.KSU_MODE }}
           KSU_VARIANT: ${{ env.KSU_VARIANT }}
-          NOMOUNT_BUILTIN: "1"
+          SUSFS_ENABLE: ${{ env.USE_SUSFS == 'true' && '1' || '0' }}
+          NOMOUNT_BUILTIN: ${{ env.USE_NOMOUNT == 'true' && '1' || '0' }}
         run: |
           cd kernel_platform/xiaomi/sm8450
           export PATH="$(realpath ../../clang/${CLANG_DIR}/bin):$PATH"
@@ -173,7 +198,7 @@ jobs:
       - name: Upload kernel image artifact
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: kernel-image-${{ env.KSU_VARIANT }}-susfs
+          name: kernel-image-${{ env.KSU_VARIANT }}${{ env.USE_SUSFS == 'true' && '-susfs' || '' }}${{ env.USE_NOMOUNT == 'true' && '-nomount' || '' }}
           path: device/xiaomi/marble-kernel/Image
           compression-level: 9
           
