@@ -25,6 +25,7 @@ DTBO_WILDCARD="*"
 # KernelSU Configuration
 KSU_VARIANT="${KSU_VARIANT:-official}"  # official, next, sukisu, kowsu
 KSU_MODE="${KSU_MODE:-module}"          # module, builtin
+SUSFS_ENABLE="${SUSFS_ENABLE:-1}"         # 1 = enable SUSFS (builtin KernelSU only)
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -253,38 +254,41 @@ scripts/config --file out/.config \
     -d LOCALVERSION_AUTO
 
 if [ "$KSU_MODE" = "builtin" ] || [ "$KSU_BUILTIN" = "1" ]; then
-    echo_i "Enabling built-in KernelSU (${KSU_VARIANT}) + SUSFS..."
+    echo_i "Enabling built-in KernelSU (${KSU_VARIANT})..."
     scripts/config --file out/.config -e CONFIG_KSU
-    
-    # Enable SUSFS flags for all variants.
-    scripts/config --file out/.config \
-        -e CONFIG_KSU_SUSFS \
-        -e CONFIG_KSU_SUSFS_SUS_PATH \
-        -e CONFIG_KSU_SUSFS_SUS_MOUNT \
-        -e CONFIG_KSU_SUSFS_SUS_KSTAT \
-        -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
-        -e CONFIG_KSU_SUSFS_ENABLE_LOG \
-        -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-        -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-        -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
-        -e CONFIG_KSU_SUSFS_SUS_MAP \
-        -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
-    
+
+    if [ "$SUSFS_ENABLE" = "1" ]; then
+        echo_i "Enabling SUSFS..."
+        scripts/config --file out/.config \
+            -e CONFIG_KSU_SUSFS \
+            -e CONFIG_KSU_SUSFS_SUS_PATH \
+            -e CONFIG_KSU_SUSFS_SUS_MOUNT \
+            -e CONFIG_KSU_SUSFS_SUS_KSTAT \
+            -e CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            -e CONFIG_KSU_SUSFS_ENABLE_LOG \
+            -e CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            -e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            -e CONFIG_KSU_SUSFS_SUS_MAP \
+            -e CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+    fi
+
     m olddefconfig
-    
+
     # Strict verification for KernelSU
     if ! grep -q "^CONFIG_KSU=y" out/.config; then
         echo_e "CONFIG_KSU=y is missing from out/.config. Ensure ${KSU_VARIANT} source is cloned."
         exit 1
     fi
 
-    # Strict verification for SUSFS
-    if ! grep -q "^CONFIG_KSU_SUSFS=y" out/.config; then
-        echo_e "CRITICAL: CONFIG_KSU_SUSFS=y is missing from out/.config!"
-        echo_e "This means the kernel SUSFS patch failed to apply, or the kernel version is incompatible."
-        echo_e "Stopping build to save CI time."
-        exit 1
-    else
+    # Strict verification for SUSFS (only when requested)
+    if [ "$SUSFS_ENABLE" = "1" ]; then
+        if ! grep -q "^CONFIG_KSU_SUSFS=y" out/.config; then
+            echo_e "CRITICAL: CONFIG_KSU_SUSFS=y is missing from out/.config!"
+            echo_e "This means the kernel SUSFS patch failed to apply, or the kernel version is incompatible."
+            echo_e "Stopping build to save CI time."
+            exit 1
+        fi
         echo_i "SUCCESS: CONFIG_KSU_SUSFS is correctly enabled!"
     fi
 else
