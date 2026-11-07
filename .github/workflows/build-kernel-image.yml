@@ -146,28 +146,13 @@ jobs:
           REF="${SUSFS_REF:-main}"
           echo "Setting susfs4ksu to ref: $REF"
 
-          if [ -d "$SUSFS_DIR/.git" ]; then
-            # It's a git repo (submodule or cloned) — fetch and checkout the ref
-            cd "$SUSFS_DIR"
-            git fetch --depth=1 origin "$REF" || git fetch --depth=1 origin
-            git checkout FETCH_HEAD 2>/dev/null || git checkout "$REF" 2>/dev/null || true
-            echo "SUSFS checked out at: $(git rev-parse HEAD)"
-          elif [ -d "$SUSFS_DIR" ]; then
-            # Directory exists but not a git repo — remove and reclone
-            rm -rf "$SUSFS_DIR"
-            git clone -n --depth=1 --filter=tree:0 https://github.com/simonpunk/susfs4ksu.git "$SUSFS_DIR"
-            cd "$SUSFS_DIR"
-            git fetch --depth=1 origin "$REF"
-            git checkout FETCH_HEAD
-            echo "SUSFS cloned and checked out at: $(git rev-parse HEAD)"
-          else
-            # Directory doesn't exist — fresh clone
-            git clone -n --depth=1 --filter=tree:0 https://github.com/simonpunk/susfs4ksu.git "$SUSFS_DIR"
-            cd "$SUSFS_DIR"
-            git fetch --depth=1 origin "$REF"
-            git checkout FETCH_HEAD
-            echo "SUSFS cloned and checked out at: $(git rev-parse HEAD)"
-          fi
+          # Selalu hapus dan clone ulang dengan HTTPS untuk menghindari masalah remote/submodule
+          rm -rf "$SUSFS_DIR"
+          git clone -n --depth=1 --filter=tree:0 https://github.com/simonpunk/susfs4ksu.git "$SUSFS_DIR"
+          cd "$SUSFS_DIR"
+          git fetch --depth=1 origin "$REF"
+          git checkout FETCH_HEAD
+          echo "SUSFS checked out at: $(git rev-parse HEAD)"
       - name: Include SUSFS
         if: env.USE_SUSFS == 'true'
         run: |
