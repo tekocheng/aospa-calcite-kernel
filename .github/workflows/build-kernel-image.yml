@@ -148,7 +148,7 @@ jobs:
 
           # Selalu hapus dan clone ulang dengan HTTPS untuk menghindari masalah remote/submodule
           rm -rf "$SUSFS_DIR"
-          git clone -n --depth=1 --filter=tree:0 https://github.com/simonpunk/susfs4ksu.git "$SUSFS_DIR"
+          git clone -n --depth=1 --filter=tree:0 https://gitlab.com/simonpunk/susfs4ksu.git "$SUSFS_DIR"
           cd "$SUSFS_DIR"
           git fetch --depth=1 origin "$REF"
           git checkout FETCH_HEAD
